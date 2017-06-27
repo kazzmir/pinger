@@ -3,6 +3,7 @@ package main
 import "fmt"
 import "os"
 import "sort"
+import "bufio"
 import "github.com/nsf/termbox-go"
 import "sync"
 import "errors"
@@ -136,12 +137,38 @@ func display(hosts []string){
   termbox.PollEvent()
 }
 
+func read_file(path string) []string {
+  out := make([]string, 0)
+
+  file, err := os.Open(path)
+  if err != nil {
+    panic(err)
+  }
+  defer file.Close()
+
+  scanner := bufio.NewScanner(file)
+  for scanner.Scan() {
+    out = append(out, scanner.Text())
+  }
+
+  return out
+}
+
 func main(){
   hosts := make([]string, 0)
-  for _, arg := range os.Args[1:] {
-    fmt.Println(arg)
-    hosts = append(hosts, arg)
+  for i := 1; i < len(os.Args); i++ {
+    arg := os.Args[i]
+    if arg == "-h" {
+      if i + 1 < len(os.Args) {
+        i += 1
+        hosts = append(hosts, read_file(os.Args[i])...)
+      }
+    } else {
+      hosts = append(hosts, arg)
+    }
   }
 
   display(hosts)
+
+  _ = fmt.Println
 }
