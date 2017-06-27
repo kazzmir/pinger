@@ -10,6 +10,9 @@ import "errors"
 import "time"
 import "github.com/sparrc/go-ping"
 
+const VERSION_MAJOR = 0
+const VERSION_MINOR = 1
+
 func ping_host(host string) (ping.Statistics, error) {
   pinger, err := ping.NewPinger(host)
   if err != nil {
@@ -46,8 +49,19 @@ func render(hosts map[string]Status){
   background := termbox.ColorBlack
   termbox.Clear(termbox.ColorWhite, background)
 
+  term_print(0, 0, termbox.ColorWhite, termbox.ColorBlack, fmt.Sprintf("Pinger version %d.%d", VERSION_MAJOR, VERSION_MINOR))
+
+  now := time.Now()
+  hour := now.Hour()
+  ampm := "am"
+  if hour > 12 {
+      hour -= 12
+      ampm = "pm"
+  }
+  term_print(1, 1, termbox.ColorWhite, termbox.ColorBlack, fmt.Sprintf("%d/%02d/%d %d:%02d:%02d%s", now.Year(), now.Month(), now.Day(), hour, now.Minute(), now.Second(), ampm))
+
   x := 1
-  y := 1
+  y := 2
   var status_x int = 1
   keys := []string{}
   for k, _ := range hosts {
@@ -107,6 +121,14 @@ func display(hosts []string){
 
   render(state)
 
+  second := make(chan bool)
+  go func(){
+      for {
+          time.Sleep(1 * time.Second)
+          second <- true
+      }
+  }()
+
   go func(){
     for {
         // fmt.Printf("Wait..\n")
@@ -119,6 +141,10 @@ func display(hosts []string){
             case update := <-state_update: {
               refresh = true
               state[update.host] = update
+              break
+            }
+            case <-second: {
+              refresh = true
               break
             }
             default: {
