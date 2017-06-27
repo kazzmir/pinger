@@ -29,18 +29,30 @@ func term_print(x, y int, fg, bg termbox.Attribute, message string){
   }
 }
 
+func Max(x, y int) int {
+    if x > y {
+        return x
+    }
+    return y
+}
+
 func render(hosts map[string]string){
   background := termbox.ColorBlack
   termbox.Clear(background, termbox.ColorWhite)
 
   x := 1
   y := 1
+  var status_x int = 1
   keys := []string{}
-  for k, _ := range hosts { keys = append(keys, k) }
+  for k, _ := range hosts {
+      keys = append(keys, k)
+      status_x = Max(status_x, len(k) + 2)
+  }
   sort.Strings(keys)
   for _, host := range keys {
       status := hosts[host]
-      term_print(x, y, termbox.ColorRed, termbox.ColorWhite, fmt.Sprintf("%s %s", host, status))
+      term_print(x, y, termbox.ColorRed, termbox.ColorWhite, host)
+      term_print(status_x, y, termbox.ColorRed, termbox.ColorWhite, status)
       y += 1
   }
   termbox.Flush()
