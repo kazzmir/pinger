@@ -1,10 +1,17 @@
+Ncurses UI for sending multiple pings at the same time
+
+![pinger](https://github.com/kazzmir/pinger/raw/master/pinger-small.png)
+
 ```
 $ make setup
 $ make
 $ ./pinger
 ```
 
+Go libraries used:
+
 go get github.com/sparrc/go-ping
+
 go get github.com/nsf/termbox-go
 
 This library attempts to send an "unprivileged" ping via UDP. On linux, this must be enabled by setting
