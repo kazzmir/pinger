@@ -1,8 +1,11 @@
 ```
-$ go get github.com/sparrc/go-ping
+$ make setup
 $ make
 $ ./pinger
 ```
+
+go get github.com/sparrc/go-ping
+go get github.com/nsf/termbox-go
 
 This library attempts to send an "unprivileged" ping via UDP. On linux, this must be enabled by setting
 
