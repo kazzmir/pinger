@@ -5,6 +5,7 @@ import "os"
 import "sort"
 import "github.com/nsf/termbox-go"
 import "sync"
+import "errors"
 import "time"
 import "github.com/sparrc/go-ping"
 
@@ -16,8 +17,12 @@ func ping_host(host string) (ping.Statistics, error) {
     return s, err
   }
   pinger.Count = 1
+  pinger.Timeout = 2 * time.Second
   pinger.Run()
   stats := pinger.Statistics()
+  if stats.AvgRtt == 0 {
+      return ping.Statistics{}, errors.New("timeout")
+  }
   return *stats, nil
   // fmt.Printf("Sent %d\n", stats.PacketsSent)
 }
@@ -36,9 +41,9 @@ func Max(x, y int) int {
     return y
 }
 
-func render(hosts map[string]string){
+func render(hosts map[string]Status){
   background := termbox.ColorBlack
-  termbox.Clear(background, termbox.ColorWhite)
+  termbox.Clear(termbox.ColorWhite, background)
 
   x := 1
   y := 1
@@ -51,8 +56,12 @@ func render(hosts map[string]string){
   sort.Strings(keys)
   for _, host := range keys {
       status := hosts[host]
-      term_print(x, y, termbox.ColorRed, termbox.ColorWhite, host)
-      term_print(status_x, y, termbox.ColorRed, termbox.ColorWhite, status)
+      foreground := termbox.ColorGreen
+      if ! status.ok {
+          foreground = termbox.ColorRed
+      }
+      term_print(x, y, foreground, background, host)
+      term_print(status_x, y, foreground, background, status.message)
       y += 1
   }
   termbox.Flush()
@@ -63,9 +72,10 @@ func f(){
     waiter.Done()
 }
 
-type Update struct {
+type Status struct {
   host string
   message string
+  ok bool
 }
 
 func display(hosts []string){
@@ -75,19 +85,19 @@ func display(hosts []string){
   }
   defer termbox.Close()
 
-  var state map[string]string
-  state = make(map[string]string)
-  var state_update = make(chan Update, len(hosts) * 3)
+  var state map[string]Status
+  state = make(map[string]Status)
+  var state_update = make(chan Status, len(hosts) * 3)
 
   for _, host := range hosts {
-      state[host] = "..."
+      state[host] = Status{host, "...", false}
       go func(host string){
           for {
               stats, err := ping_host(host)
               if err != nil {
-                  state_update <- Update{host, err.Error()}
+                  state_update <- Status{host, err.Error(), false}
               } else {
-                  state_update <- Update{host, stats.AvgRtt.String()}
+                  state_update <- Status{host, stats.AvgRtt.String(), true}
               }
               time.Sleep(1 * time.Second)
           }
@@ -99,13 +109,15 @@ func display(hosts []string){
   go func(){
     for {
         // fmt.Printf("Wait..\n")
-        time.Sleep(1 * time.Second)
+        refresh := false
+        time.Sleep(200 * time.Millisecond)
         // fmt.Printf("Go..\n")
         all:
         for {
           select {
             case update := <-state_update: {
-              state[update.host] = update.message
+              refresh = true
+              state[update.host] = update
               break
             }
             default: {
@@ -114,8 +126,10 @@ func display(hosts []string){
             }
           }
         }
-        // fmt.Printf("Render..\n")
-        render(state)
+        if refresh {
+          // fmt.Printf("Render..\n")
+          render(state)
+        }
     }
   }()
 
