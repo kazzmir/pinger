@@ -3,9 +3,15 @@ package main
 import "fmt"
 import "os"
 import "sort"
+import _ "net/http/pprof"
+import _ "net/http"
+import _ "log"
+// import "runtime/debug"
+import "strconv"
 import "bufio"
 import "github.com/nsf/termbox-go"
 import "sync"
+import "regexp"
 import "errors"
 import "time"
 import "github.com/sparrc/go-ping"
@@ -163,6 +169,100 @@ func display(hosts []string){
   termbox.PollEvent()
 }
 
+func is_ip_with_netmask(host string) bool {
+    matched, _ := regexp.MatchString("\\d+\\.\\d+\\.\\d+\\.\\d+\\/\\d+", host)
+    return matched
+}
+
+func get_subnet_netmask(subnet uint) []int {
+    m32 := 0xffffffff
+    bits := m32 & (m32 >> subnet)
+    n := m32 ^ bits
+
+    b1 := (n >> 24) & 0xff
+    b2 := (n >> 16) & 0xff
+    b3 := (n >> 8) & 0xff
+    b4 := (n >> 0) & 0xff
+    return []int{b1, b2, b3, b4}
+}
+
+func make_part(number, bits int) chan int {
+    /*
+    out := make(chan int, 255)
+    max := 255 - bits
+    for i := 0; i < max + 1; i++ {
+        out <- number + i
+    }
+    close(out)
+    return out
+    */
+
+    out := make(chan int)
+    max := 255 - bits
+    go func(){
+        for i := 0; i < max + 1; i++ {
+            out <- number + i
+        }
+        close(out)
+    }()
+
+    return out
+}
+
+func generate_ips(b1, b2, b3, b4, subnet int) []string {
+    netmask := get_subnet_netmask(uint(subnet))
+    out := make([]string, 0)
+
+    /*
+    go func(){
+        for {
+            time.Sleep(1 * time.Second)
+            debug.PrintStack()
+        }
+    }()
+    */
+
+    // fmt.Println("%d.%d.%d.%d/%d\n", b1, b2, b3, b4, subnet)
+    for a := range make_part(b1, netmask[0]) {
+        for b := range make_part(b2, netmask[1]) {
+            for c := range make_part(b3, netmask[2]) {
+                for d := range make_part(b4, netmask[3]) {
+                    // fmt.Printf("%d.%d.%d.%d\n", a, b, c, d)
+                    if d != 255 {
+                        out = append(out, fmt.Sprintf("%d.%d.%d.%d", a, b, c, d))
+                    }
+                }
+            }
+        }
+    }
+
+    return out
+}
+
+/*
+ * hostname => [hostname]
+ * ip => [ip]
+ * ip/bits => [ip, ip+1, ip+2, ...]
+ *
+ * meaning 172.16.0.0/24 will return all addresses from 172.16.0.0-172.16.0.254
+ * the broadcast ip, .255, will be left off
+ */
+func process_host(host string) []string {
+    if is_ip_with_netmask(host) {
+        // fmt.Printf("%s is a netmask\n", host)
+        ip := regexp.MustCompile("(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\/(\\d+)")
+        parts := ip.FindStringSubmatch(host)
+        b1, _ := strconv.Atoi(parts[1])
+        b2, _ := strconv.Atoi(parts[2])
+        b3, _ := strconv.Atoi(parts[3])
+        b4, _ := strconv.Atoi(parts[4])
+        netmask, _ := strconv.Atoi(parts[5])
+        return generate_ips(b1, b2, b3, b4, netmask)
+    }
+
+    return []string{host}
+}
+
 func read_file(path string) []string {
   out := make([]string, 0)
 
@@ -174,26 +274,38 @@ func read_file(path string) []string {
 
   scanner := bufio.NewScanner(file)
   for scanner.Scan() {
-    out = append(out, scanner.Text())
+    out = append(out, process_host(scanner.Text())...)
   }
 
   return out
 }
 
 func main(){
+
+    /*
+  go func(){
+    log.Println(http.ListenAndServe("localhost:6060", nil))
+  }()
+  */
+
+  // fmt.Println(get_subnet_netmask(24))
+  // fmt.Println(generate_ips(172, 16, 0, 0, 30))
   hosts := make([]string, 0)
   for i := 1; i < len(os.Args); i++ {
     arg := os.Args[i]
+    fmt.Println(arg)
     if arg == "-h" {
       if i + 1 < len(os.Args) {
         i += 1
         hosts = append(hosts, read_file(os.Args[i])...)
       }
     } else {
-      hosts = append(hosts, arg)
+      hosts = append(hosts, process_host(arg)...)
     }
+    fmt.Println(arg)
   }
 
+  fmt.Println("go\n")
   display(hosts)
 
   _ = fmt.Println
