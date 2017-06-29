@@ -6,6 +6,7 @@ import "sort"
 import _ "net/http/pprof"
 import _ "net/http"
 import _ "log"
+// import "math/rand"
 // import "runtime/debug"
 import "strconv"
 import "bufio"
@@ -51,11 +52,19 @@ func Max(x, y int) int {
     return y
 }
 
-func render(hosts map[string]Status){
+func Min(x, y int) int {
+    if x > y {
+        return y
+    }
+    return x
+}
+
+func render(hosts map[string]Status, scroll int){
   background := termbox.ColorBlack
   termbox.Clear(termbox.ColorWhite, background)
 
-  term_print(0, 0, termbox.ColorWhite, termbox.ColorBlack, fmt.Sprintf("Pinger version %d.%d", VERSION_MAJOR, VERSION_MINOR))
+  term_print(0, 0, termbox.ColorWhite, background, fmt.Sprintf("Pinger version %d.%d", VERSION_MAJOR, VERSION_MINOR))
+  // term_print(30, 0, termbox.ColorYellow, background, ([]string{"1", "2", "3", "4", "5", "6", "7", "8"})[rand.Intn(8)])
 
   now := time.Now()
   hour := now.Hour()
@@ -64,18 +73,38 @@ func render(hosts map[string]Status){
       hour -= 12
       ampm = "pm"
   }
-  term_print(1, 1, termbox.ColorWhite, termbox.ColorBlack, fmt.Sprintf("%d/%02d/%d %d:%02d:%02d%s", now.Year(), now.Month(), now.Day(), hour, now.Minute(), now.Second(), ampm))
+  term_print(0, 1, termbox.ColorWhite, background, fmt.Sprintf("%d/%02d/%d %d:%02d:%02d%s", now.Year(), now.Month(), now.Day(), hour, now.Minute(), now.Second(), ampm))
 
-  x := 1
+  x := 2
   y := 2
-  var status_x int = 1
+
+  _, screen_height := termbox.Size()
+
+  max_display := screen_height - y
+
+  var status_x int = x
   keys := []string{}
   for k, _ := range hosts {
       keys = append(keys, k)
-      status_x = Max(status_x, len(k) + 2)
+      status_x = Max(status_x, len(k) + x + 1)
   }
   sort.Strings(keys)
-  for _, host := range keys {
+
+  end := Min(len(keys) - scroll, max_display)
+
+  if scroll > 0 {
+      term_print(0, 2, termbox.ColorYellow, background, "^")
+      term_print(0, 3, termbox.ColorYellow, background, "|")
+      term_print(0, 4, termbox.ColorYellow, background, "|")
+  }
+
+  if scroll + end < len(keys) {
+      term_print(0, screen_height - 3, termbox.ColorYellow, background, "|")
+      term_print(0, screen_height - 2, termbox.ColorYellow, background, "|")
+      term_print(0, screen_height - 1, termbox.ColorYellow, background, "V")
+  }
+
+  for _, host := range keys[scroll:scroll + end] {
       status := hosts[host]
       foreground := termbox.ColorGreen
       if ! status.ok {
@@ -99,6 +128,11 @@ type Status struct {
   ok bool
 }
 
+const ScrollUp = 0
+const ScrollDown = 1
+const ScrollPageUp = 2
+const ScrollPageDown = 3
+
 func display(hosts []string){
   err := termbox.Init()
   if err != nil {
@@ -110,22 +144,36 @@ func display(hosts []string){
   state = make(map[string]Status)
   var state_update = make(chan Status, len(hosts) * 3)
 
+  /* Number of simaltaenous pings being sent. What is a good number? Number of cores? */
+  can_ping := make(chan int)
+  go func(){
+      for {
+          for i := 0; i < 7; i++ {
+            can_ping <- 0
+          }
+          time.Sleep(1 * time.Second)
+      }
+  }()
+
   for _, host := range hosts {
       state[host] = Status{host, "...", false}
       go func(host string){
           for {
+              // sleep_time := time.Duration(1300 + 200 * rand.Intn(10)) * time.Millisecond
+              <-can_ping
               stats, err := ping_host(host)
               if err != nil {
                   state_update <- Status{host, err.Error(), false}
+                  // sleep_time = time.Duration(rand.Intn(10) + 3) * time.Second
               } else {
                   state_update <- Status{host, stats.AvgRtt.String(), true}
               }
-              time.Sleep(1 * time.Second)
+              // time.Sleep(sleep_time)
           }
       }(host)
   }
 
-  render(state)
+  render(state, 0)
 
   second := make(chan bool)
   go func(){
@@ -135,15 +183,44 @@ func display(hosts []string){
       }
   }()
 
+  action := make(chan int, 100)
+
   go func(){
+    scroll := 0
     for {
         // fmt.Printf("Wait..\n")
         refresh := false
-        time.Sleep(200 * time.Millisecond)
         // fmt.Printf("Go..\n")
         all:
         for {
           select {
+            case move := <-action: {
+              refresh = true
+                screen_width, screen_height := termbox.Size()
+              _ = screen_width
+              _ = screen_height
+
+              movement := 0
+              if move == ScrollDown {
+                  movement = 1
+              } else if move == ScrollPageDown {
+                  movement = 10
+              } else if move == ScrollUp {
+                  movement = -1
+              } else if move == ScrollPageUp {
+                  movement = -10
+              }
+
+              scroll += movement
+              max_up := len(hosts) - screen_height + 2
+              if scroll >= max_up {
+                scroll = max_up
+              }
+              if scroll < 0 {
+                  scroll = 0
+              }
+              break
+            }
             case update := <-state_update: {
               refresh = true
               state[update.host] = update
@@ -161,12 +238,35 @@ func display(hosts []string){
         }
         if refresh {
           // fmt.Printf("Render..\n")
-          render(state)
+          render(state, scroll)
+        } else {
+          time.Sleep(1 * time.Millisecond)
         }
     }
   }()
 
-  termbox.PollEvent()
+  for {
+      event := termbox.PollEvent()
+      if event.Type == termbox.EventKey {
+        key := event.Key
+        // fmt.Println(key)
+        if key == termbox.KeyArrowUp {
+            action <- ScrollUp
+        }
+        if key == termbox.KeyArrowDown {
+            action <- ScrollDown
+        }
+        if key == termbox.KeyPgup {
+            action <- ScrollPageUp
+        }
+        if key == termbox.KeyPgdn {
+            action <- ScrollPageDown
+        }
+        if key == termbox.KeyEsc {
+            break
+        }
+      }
+  }
 }
 
 func is_ip_with_netmask(host string) bool {
@@ -187,16 +287,6 @@ func get_subnet_netmask(subnet uint) []int {
 }
 
 func make_part(number, bits int) chan int {
-    /*
-    out := make(chan int, 255)
-    max := 255 - bits
-    for i := 0; i < max + 1; i++ {
-        out <- number + i
-    }
-    close(out)
-    return out
-    */
-
     out := make(chan int)
     max := 255 - bits
     go func(){
@@ -293,7 +383,6 @@ func main(){
   hosts := make([]string, 0)
   for i := 1; i < len(os.Args); i++ {
     arg := os.Args[i]
-    fmt.Println(arg)
     if arg == "-h" {
       if i + 1 < len(os.Args) {
         i += 1
@@ -302,10 +391,8 @@ func main(){
     } else {
       hosts = append(hosts, process_host(arg)...)
     }
-    fmt.Println(arg)
   }
 
-  fmt.Println("go\n")
   display(hosts)
 
   _ = fmt.Println
