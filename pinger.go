@@ -88,7 +88,7 @@ func render(hosts map[string]Status, scroll int){
   keys := []string{}
   for k, _ := range hosts {
       keys = append(keys, k)
-      status_x = Max(status_x, len(k) + x + 1)
+      status_x = Max(status_x, len(k) + x + 3)
   }
   sort.Strings(keys)
 
