@@ -69,9 +69,11 @@ func render(hosts map[string]Status, scroll int){
   now := time.Now()
   hour := now.Hour()
   ampm := "am"
+  if hour >= 12 {
+      ampm = "pm"
+  }
   if hour > 12 {
       hour -= 12
-      ampm = "pm"
   }
   term_print(0, 1, termbox.ColorWhite, background, fmt.Sprintf("%d/%02d/%d %d:%02d:%02d%s", now.Year(), now.Month(), now.Day(), hour, now.Minute(), now.Second(), ampm))
 
