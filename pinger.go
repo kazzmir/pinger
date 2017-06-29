@@ -274,6 +274,11 @@ func is_ip_with_netmask(host string) bool {
     return matched
 }
 
+/*
+ * /32 => [255, 255, 255, 255]
+ * /27 => [255, 255, 255, 224]
+ * /24 => [255, 255, 255, 0]
+ */
 func get_subnet_netmask(subnet uint) []int {
     m32 := 0xffffffff
     bits := m32 & (m32 >> subnet)
@@ -364,7 +369,7 @@ func read_file(path string) []string {
 
   scanner := bufio.NewScanner(file)
   for scanner.Scan() {
-    out = append(out, process_host(scanner.Text())...)
+    out = append(out, scanner.Text())
   }
 
   return out
@@ -386,7 +391,9 @@ func main(){
     if arg == "-h" {
       if i + 1 < len(os.Args) {
         i += 1
-        hosts = append(hosts, read_file(os.Args[i])...)
+        for _, host := range read_file(os.Args[i]) {
+          hosts = append(hosts, process_host(host)...)
+        }
       }
     } else {
       hosts = append(hosts, process_host(arg)...)
