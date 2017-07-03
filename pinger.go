@@ -300,15 +300,20 @@ func display(hosts []string){
               _ = screen_width
               _ = screen_height
 
+              page_movement := screen_height - 3
+              if page_movement < 0 {
+                page_movement = 0
+              }
+
               movement := 0
               if move == ScrollDown {
                   movement = 1
               } else if move == ScrollPageDown {
-                  movement = 10
+                  movement = page_movement
               } else if move == ScrollUp {
                   movement = -1
               } else if move == ScrollPageUp {
-                  movement = -10
+                  movement = -page_movement
               }
 
               scroll += movement
