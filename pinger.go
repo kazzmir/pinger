@@ -350,16 +350,22 @@ func display(hosts []string){
       if event.Type == termbox.EventKey {
         key := event.Key
         // fmt.Println(key)
-        if key == termbox.KeyArrowUp {
+        if key == termbox.KeyArrowUp || event.Ch == 'k' {
             action <- ScrollUp
         }
-        if key == termbox.KeyArrowDown {
+        if key == termbox.KeyArrowDown || event.Ch == 'j' {
             action <- ScrollDown
         }
         if key == termbox.KeyPgup {
             action <- ScrollPageUp
         }
         if key == termbox.KeyPgdn {
+            action <- ScrollPageDown
+        }
+        if key == termbox.KeyCtrlU {
+            action <- ScrollPageUp
+        }
+        if key == termbox.KeyCtrlD {
             action <- ScrollPageDown
         }
         if event.Ch == 's' {
