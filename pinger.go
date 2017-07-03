@@ -379,7 +379,7 @@ func display(hosts []string){
             }
           }
         }
-        if key == termbox.KeyEsc {
+        if key == termbox.KeyEsc || event.Ch == 'q' {
             break
         }
       }
