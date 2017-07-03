@@ -59,7 +59,101 @@ func Min(x, y int) int {
     return x
 }
 
-func render(hosts map[string]Status, scroll int){
+type StatusSort struct {
+  data []Status
+}
+
+func (s StatusSort) Len() int {
+  return len(s.data)
+}
+
+func (s StatusSort) Less(i, j int) bool {
+  a := s.data[i]
+  b := s.data[j]
+
+  if a.last_ping == -1 && b.last_ping > -1 {
+    return false
+  }
+
+  if b.last_ping == -1 && a.last_ping > -1 {
+    return true
+  }
+
+  if a.last_ping == b.last_ping {
+    return a.host < b.host
+  }
+  return a.last_ping < b.last_ping
+}
+
+func (s StatusSort) Swap(i, j int) {
+  t := s.data[i]
+  s.data[i] = s.data[j]
+  s.data[j] = t
+}
+
+func sort_hosts_by_ping(hosts map[string]Status, reverse bool) []string {
+  keys := []Status{}
+  for _, k := range hosts {
+    keys = append(keys, k)
+  }
+  data := StatusSort{keys}
+  if reverse {
+    sort.Sort(sort.Reverse(data))
+  } else {
+    sort.Sort(data)
+  }
+
+  names := []string{}
+  for _, status := range data.data {
+    names = append(names, status.host)
+  }
+  return names
+}
+
+func sort_hosts_by_name(hosts map[string]Status, reverse bool) []string {
+  keys := []string{}
+  for k, _ := range hosts {
+      keys = append(keys, k)
+  }
+  sort.Strings(keys)
+  if reverse && len(keys) > 0 {
+    /* FIXME: theres probably a library method for reversing an array */
+    upper := len(keys) / 2
+    for i := 0; i < upper; i += 1 {
+      s := keys[i]
+      keys[i] = keys[len(keys) - i - 1]
+      keys[len(keys) - i - 1] = s
+    }
+  }
+  return keys
+}
+
+const SortByName = 0
+const SortByNameReverse = 1
+const SortByPing = 2
+const SortByPingReverse = 3
+
+func sort_hosts(hosts map[string]Status, sort_type int) []string {
+  switch sort_type {
+    case SortByName: return sort_hosts_by_name(hosts, false)
+    case SortByNameReverse: return sort_hosts_by_name(hosts, true)
+    case SortByPing: return sort_hosts_by_ping(hosts, false)
+    case SortByPingReverse: return sort_hosts_by_ping(hosts, true)
+  }
+  return nil
+}
+
+func sort_description(sort_type int) string {
+  switch sort_type {
+    case SortByName: return "(S)ort by name"
+    case SortByNameReverse: return "(S)ort by name (reversed)"
+    case SortByPing: return "(S)ort by ping time"
+    case SortByPingReverse: return "(S)ort by ping time (reversed)"
+  }
+  return ""
+}
+
+func render(hosts map[string]Status, scroll int, sort_type int){
   background := termbox.ColorBlack
   termbox.Clear(termbox.ColorWhite, background)
 
@@ -77,6 +171,8 @@ func render(hosts map[string]Status, scroll int){
   }
   term_print(0, 1, termbox.ColorWhite, background, fmt.Sprintf("%d/%02d/%d %d:%02d:%02d%s", now.Year(), now.Month(), now.Day(), hour, now.Minute(), now.Second(), ampm))
 
+  term_print(30, 1, termbox.ColorWhite, background, sort_description(sort_type))
+
   x := 2
   y := 2
 
@@ -85,13 +181,7 @@ func render(hosts map[string]Status, scroll int){
   max_display := screen_height - y
 
   var status_x int = x
-  keys := []string{}
-  for k, _ := range hosts {
-      keys = append(keys, k)
-      status_x = Max(status_x, len(k) + x + 3)
-  }
-  sort.Strings(keys)
-
+  keys := sort_hosts(hosts, sort_type)
   end := Min(len(keys) - scroll, max_display)
 
   if scroll > 0 {
@@ -104,6 +194,10 @@ func render(hosts map[string]Status, scroll int){
       term_print(0, screen_height - 3, termbox.ColorYellow, background, "|")
       term_print(0, screen_height - 2, termbox.ColorYellow, background, "|")
       term_print(0, screen_height - 1, termbox.ColorYellow, background, "V")
+  }
+
+  for _, host := range keys[scroll:scroll + end] {
+      status_x = Max(status_x, len(host) + x + 3)
   }
 
   for _, host := range keys[scroll:scroll + end] {
@@ -128,12 +222,14 @@ type Status struct {
   host string
   message string
   ok bool
+  last_ping time.Duration
 }
 
 const ScrollUp = 0
 const ScrollDown = 1
 const ScrollPageUp = 2
 const ScrollPageDown = 3
+const Repaint = 4
 
 func display(hosts []string){
   err := termbox.Init()
@@ -145,6 +241,8 @@ func display(hosts []string){
   var state map[string]Status
   state = make(map[string]Status)
   var state_update = make(chan Status, len(hosts) * 3)
+
+  var sort_type = SortByName
 
   /* Number of simaltaenous pings being sent. What is a good number? Number of cores? */
   can_ping := make(chan int)
@@ -158,24 +256,24 @@ func display(hosts []string){
   }()
 
   for _, host := range hosts {
-      state[host] = Status{host, "...", false}
+      state[host] = Status{host, "...", false, -1}
       go func(host string){
           for {
               // sleep_time := time.Duration(1300 + 200 * rand.Intn(10)) * time.Millisecond
               <-can_ping
               stats, err := ping_host(host)
               if err != nil {
-                  state_update <- Status{host, err.Error(), false}
+                  state_update <- Status{host, err.Error(), false, -1}
                   // sleep_time = time.Duration(rand.Intn(10) + 3) * time.Second
               } else {
-                  state_update <- Status{host, stats.AvgRtt.String(), true}
+                  state_update <- Status{host, stats.AvgRtt.String(), true, stats.AvgRtt}
               }
               // time.Sleep(sleep_time)
           }
       }(host)
   }
 
-  render(state, 0)
+  render(state, 0, sort_type)
 
   second := make(chan bool)
   go func(){
@@ -240,7 +338,7 @@ func display(hosts []string){
         }
         if refresh {
           // fmt.Printf("Render..\n")
-          render(state, scroll)
+          render(state, scroll, sort_type)
         } else {
           time.Sleep(1 * time.Millisecond)
         }
@@ -263,6 +361,23 @@ func display(hosts []string){
         }
         if key == termbox.KeyPgdn {
             action <- ScrollPageDown
+        }
+        if event.Ch == 's' {
+          action <- Repaint
+          switch sort_type {
+            case SortByName: {
+              sort_type = SortByNameReverse
+            }
+            case SortByNameReverse: {
+              sort_type = SortByPing
+            }
+            case SortByPing: {
+              sort_type = SortByPingReverse
+            }
+            case SortByPingReverse: {
+              sort_type = SortByName
+            }
+          }
         }
         if key == termbox.KeyEsc {
             break
@@ -297,7 +412,7 @@ func make_part(number, bits int) chan int {
     out := make(chan int)
     max := 255 - bits
     go func(){
-        for i := 0; i < max + 1; i++ {
+        for i := 0; i < max + 1 && i + number <= 255; i++ {
             out <- number + i
         }
         close(out)
