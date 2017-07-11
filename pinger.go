@@ -18,7 +18,7 @@ import "time"
 import "github.com/sparrc/go-ping"
 
 const VERSION_MAJOR = 0
-const VERSION_MINOR = 1
+const VERSION_MINOR = 2
 
 func ping_host(host string) (ping.Statistics, error) {
   pinger, err := ping.NewPinger(host)
@@ -294,7 +294,7 @@ func display(hosts []string){
   can_ping := make(chan int)
   go func(){
       for {
-          for i := 0; i < 7; i++ {
+          for i := 0; i < Min(len(hosts), 7); i++ {
             can_ping <- 0
           }
           time.Sleep(1 * time.Second)
