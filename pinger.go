@@ -320,6 +320,7 @@ func display(hosts []string){
               } else {
                   state_update <- Status{host, stats.AvgRtt.String(), true, stats.AvgRtt}
                   last_ok = 0
+                  time.Sleep(1 * time.Second)
               }
               // time.Sleep(sleep_time)
           }
