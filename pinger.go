@@ -304,15 +304,22 @@ func display(hosts []string){
   for _, host := range hosts {
       state[host] = Status{host, "...", false, -1}
       go func(host string){
+          last_ok := 0
           for {
               // sleep_time := time.Duration(1300 + 200 * rand.Intn(10)) * time.Millisecond
               <-can_ping
               stats, err := ping_host(host)
               if err != nil {
                   state_update <- Status{host, err.Error(), false, -1}
-                  // sleep_time = time.Duration(rand.Intn(10) + 3) * time.Second
+                  /* if there was an error then deprioritize this host */
+                  last_ok += 2
+                  if last_ok > 15 {
+                    last_ok = 15
+                  }
+                  time.Sleep(time.Duration(last_ok) * time.Second)
               } else {
                   state_update <- Status{host, stats.AvgRtt.String(), true, stats.AvgRtt}
+                  last_ok = 0
               }
               // time.Sleep(sleep_time)
           }
