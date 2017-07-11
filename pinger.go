@@ -133,12 +133,47 @@ const SortByNameReverse = 1
 const SortByPing = 2
 const SortByPingReverse = 3
 
-func sort_hosts(hosts map[string]Status, sort_type int) []string {
+const FilterNone = 0
+const FilterAlive = 1
+const FilterError = 2
+
+func filter_alive(hosts map[string]Status) map[string]Status {
+  var out map[string]Status = make(map[string]Status)
+  for host, status := range hosts {
+    if status.ok {
+      out[host] = status
+    }
+  }
+  return out
+}
+
+func filter_error(hosts map[string]Status) map[string]Status {
+  var out map[string]Status = make(map[string]Status)
+  for host, status := range hosts {
+    if ! status.ok {
+      out[host] = status
+    }
+  }
+
+  return out
+}
+
+func filter_hosts(hosts map[string]Status, filter_type int) map[string]Status {
+  switch filter_type {
+    case FilterNone: return hosts
+    case FilterAlive: return filter_alive(hosts)
+    case FilterError: return filter_error(hosts)
+  }
+
+  return nil
+}
+
+func sort_hosts(hosts map[string]Status, sort_type int, filter_type int) []string {
   switch sort_type {
-    case SortByName: return sort_hosts_by_name(hosts, false)
-    case SortByNameReverse: return sort_hosts_by_name(hosts, true)
-    case SortByPing: return sort_hosts_by_ping(hosts, false)
-    case SortByPingReverse: return sort_hosts_by_ping(hosts, true)
+    case SortByName: return sort_hosts_by_name(filter_hosts(hosts, filter_type), false)
+    case SortByNameReverse: return sort_hosts_by_name(filter_hosts(hosts, filter_type), true)
+    case SortByPing: return sort_hosts_by_ping(filter_hosts(hosts, filter_type), false)
+    case SortByPingReverse: return sort_hosts_by_ping(filter_hosts(hosts, filter_type), true)
   }
   return nil
 }
@@ -153,7 +188,16 @@ func sort_description(sort_type int) string {
   return ""
 }
 
-func render(hosts map[string]Status, scroll int, sort_type int){
+func filter_description(filter_type int) string {
+  switch filter_type {
+    case FilterNone: return "(F)ilter off"
+    case FilterAlive: return "(F)ilter alive"
+    case FilterError: return "(F)ilter error"
+  }
+  return ""
+}
+
+func render(hosts map[string]Status, scroll int, sort_type int, filter_type int){
   background := termbox.ColorBlack
   termbox.Clear(termbox.ColorWhite, background)
 
@@ -171,7 +215,8 @@ func render(hosts map[string]Status, scroll int, sort_type int){
   }
   term_print(0, 1, termbox.ColorWhite, background, fmt.Sprintf("%d/%02d/%d %d:%02d:%02d%s", now.Year(), now.Month(), now.Day(), hour, now.Minute(), now.Second(), ampm))
 
-  term_print(30, 1, termbox.ColorWhite, background, sort_description(sort_type))
+  term_print(25, 1, termbox.ColorWhite, background, sort_description(sort_type))
+  term_print(60, 1, termbox.ColorWhite, background, filter_description(filter_type))
 
   x := 2
   y := 2
@@ -181,7 +226,7 @@ func render(hosts map[string]Status, scroll int, sort_type int){
   max_display := screen_height - y
 
   var status_x int = x
-  keys := sort_hosts(hosts, sort_type)
+  keys := sort_hosts(hosts, sort_type, filter_type)
   end := Min(len(keys) - scroll, max_display)
 
   if scroll > 0 {
@@ -243,6 +288,7 @@ func display(hosts []string){
   var state_update = make(chan Status, len(hosts) * 3)
 
   var sort_type = SortByName
+  var filter_type = FilterNone
 
   /* Number of simaltaenous pings being sent. What is a good number? Number of cores? */
   can_ping := make(chan int)
@@ -273,7 +319,7 @@ func display(hosts []string){
       }(host)
   }
 
-  render(state, 0, sort_type)
+  render(state, 0, sort_type, filter_type)
 
   second := make(chan bool)
   go func(){
@@ -343,7 +389,7 @@ func display(hosts []string){
         }
         if refresh {
           // fmt.Printf("Render..\n")
-          render(state, scroll, sort_type)
+          render(state, scroll, sort_type, filter_type)
         } else {
           time.Sleep(1 * time.Millisecond)
         }
@@ -372,6 +418,20 @@ func display(hosts []string){
         }
         if key == termbox.KeyCtrlD {
             action <- ScrollPageDown
+        }
+        if event.Ch == 'f' {
+          action <- Repaint
+          switch filter_type {
+            case FilterNone: {
+              filter_type = FilterAlive
+            }
+            case FilterAlive: {
+              filter_type = FilterError
+            }
+            case FilterError: {
+              filter_type = FilterNone
+            }
+          }
         }
         if event.Ch == 's' {
           action <- Repaint
