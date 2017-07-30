@@ -245,12 +245,28 @@ func render(hosts map[string]Status, scroll int, sort_type int, filter_type int)
       status_x = Max(status_x, len(host) + x + 3)
   }
 
+  // color_good := termbox.ColorGreen
+  colors_good := make([]termbox.Attribute, 0)
+  colors_good = append(colors_good, termbox.ColorGreen)
+  colors_good = append(colors_good, termbox.ColorBlue)
+  colors_good = append(colors_good, termbox.ColorYellow)
+  color_bad := termbox.ColorRed
+
   for _, host := range keys[scroll:scroll + end] {
       status := hosts[host]
-      foreground := termbox.ColorGreen
-      if ! status.ok {
-          foreground = termbox.ColorRed
+      foreground := color_bad
+      if status.ok {
+          if status.last_ping < time.Duration(25 * time.Millisecond){
+            foreground = colors_good[0]
+          } else if status.last_ping < time.Duration(100 * time.Millisecond){
+            foreground = colors_good[1]
+          } else {
+            foreground = colors_good[2]
+          }
+      } else {
+          foreground = color_bad
       }
+
       term_print(x, y, foreground, background, host)
       term_print(status_x, y, foreground, background, status.message)
       y += 1
