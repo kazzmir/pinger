@@ -11,7 +11,7 @@ $ ./pinger
 
 Example usage
 ```
-$ pinger google.com cnn.com facebook.bom
+$ pinger google.com cnn.com facebook.com
 $ pinger 192.168.0.0/24
 ```
 
