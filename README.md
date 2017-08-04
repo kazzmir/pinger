@@ -2,10 +2,17 @@ Ncurses UI for sending multiple pings at the same time
 
 ![pinger](https://github.com/kazzmir/pinger/raw/master/pinger-small.png)
 
+Build
 ```
 $ make setup
 $ make
 $ ./pinger
+```
+
+Example usage
+```
+$ pinger google.com cnn.com facebook.bom
+$ pinger 192.168.0.0/24
 ```
 
 Go libraries used:
